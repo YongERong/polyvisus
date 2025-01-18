@@ -1,5 +1,5 @@
-{
-    "easy": [
+[
+    [
       "Thy self thy foe",
       "by the grave and thee",
       "where all thy beauty lies",
@@ -21,7 +21,7 @@
       "that thou mayst true love call",
       "Beauteous thou art"
     ],
-    "medium": [
+    [
       "Thy own self is thy foe",
       "by the eternal grave and thee",
       "wherein all thy beauty deeply lies",
@@ -43,7 +43,7 @@
       "that thou mayst call it true love",
       "Thou art most beauteous and divine"
     ],
-    "hard":[
+    [
         "let square x = x * x;;",
         "member(X, [X|_]).",
         "(loop for i from 1 to 10 sum i)",
@@ -65,5 +65,5 @@
         "(lambda (a b) (max a b))",
         ">++[->++++<]>[-<+>>++<<]+++."
     ]
-  }
+]
   

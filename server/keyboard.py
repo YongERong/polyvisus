@@ -33,7 +33,8 @@ class AdaptiveVirtualKeyboard:
         self.pressed_keys = set()
         self.typed_text = ""
         self.last_press_time = 0
-
+        self.challenges = json.load(open('server/challenges.json'))
+        self.current_challenge = random.choice(self.challenges[self.settings["difficulty"]])
         # Combined finger tracking
         self.prev_tip_positions = {}  # Track previous tip positions
         self.prev_tip_y_velocity = {}  # Track y-velocity of tips
@@ -332,15 +333,7 @@ class AdaptiveVirtualKeyboard:
             text_x = pos[0] - text_size[0]//2
             text_y = pos[1] + text_size[1]//2
 
-            display_height = 100
-            display_width = int(frame.shape[1] * 0.8)  # 80% of frame width
-            display_x = (frame.shape[1] - display_width) // 2  # Center horizontally
-            display_y = 30
             
-            cv2.rectangle(frame, 
-                     (display_x, display_y),
-                     (display_x + display_width, display_y + display_height),
-                     (255, 255, 255), 2)  # White outline
             
             cv2.putText(frame, display_text,
                        (text_x, text_y),
@@ -353,6 +346,25 @@ class AdaptiveVirtualKeyboard:
                    (50, frame.shape[0] - 50),
                    cv2.FONT_HERSHEY_SIMPLEX, 1,
                    (255, 255, 255), 2)
+        display_height = 100
+        display_width = int(frame.shape[1] * 0.8)  # 80% of frame width
+        display_x = (frame.shape[1] - display_width) // 2  # Center horizontally
+        display_y = 30
+            
+        cv2.rectangle(frame, 
+                    (display_x, display_y),
+                    (display_x + display_width, display_y + display_height),
+                    (255, 255, 255), 2)  # White outline
+        
+        # Calculate text size to center it
+        text_size = cv2.getTextSize(self.current_challenge, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        text_x = display_x + (display_width - text_size[0]) // 2  # Center horizontally
+        text_y = display_y + (display_height + text_size[1]) // 2  # Center vertically
+        
+        cv2.putText(frame, self.current_challenge,
+                    (text_x, text_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1,
+                    (255, 255, 255), 2)
 
         # Draw metrics in top right corner
         metrics_text = f"WPM: {self.current_wpm:.1f} | SPC: {self.current_spc:.2f}s"
@@ -477,7 +489,7 @@ class AdaptiveVirtualKeyboard:
 
                             if self.settings["difficulty"] == 0:
                                 self.improve_layout()
-                            elif self.settings["difficulty"] == 1:
+                            elif self.settings["difficulty"] == 2:
                                 if len(self.typed_text) % random.randint(4, 5) == 0:
                                     self.deprove_layout()
 
