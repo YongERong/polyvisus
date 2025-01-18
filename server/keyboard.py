@@ -10,7 +10,7 @@ sys.path.append('../spellchecker')
 import spellchecker
 
 class AdaptiveVirtualKeyboard:
-    def __init__(self, aspect_ratio):
+    def __init__(self):
         # Initialize spellchecker
         self.spell = spellchecker
 
@@ -25,7 +25,7 @@ class AdaptiveVirtualKeyboard:
         self.mp_drawing = mp.solutions.drawing_utils
         
         # Initialize keyboard state
-        self.config = json.load(open('../server/config.json'))
+        self.config = json.load(open('server/config.json'))
         self.settings = self.config['settings']
         self.current_layout = "letters"
         self.shift_active = False
@@ -155,44 +155,73 @@ class AdaptiveVirtualKeyboard:
 
         self.current_keys = self.layout_configs["letters"].copy()
 
-    # def update_layout(self):
-    #     """Update key positions based on usage patterns"""
-    #     current_time = time.time()
-    #     if current_time - self.last_layout_update < self.settings["layout_update_interval"]:
-    #         return
+    def update_layout(self):
+        """
+        Update key positions based on usage patterns to minimize finger movement.
+        Keys that are frequently used together will be positioned closer to each other.
+        """
+        current_time = time.time()
+        if current_time - self.last_layout_update < self.settings["layout_update_interval"]:
+            return
 
-    #     # Remove old press history
-    #     current_time = time.time()
-    #     self.press_history = [press for press in self.press_history 
-    #                         if current_time - press[1] < 60]  # Keep last minute
+        # Remove old press history (keep last 2 minutes)
+        self.press_history = [press for press in self.press_history 
+                             if current_time - press[1] < 120]
 
-    #     if len(self.press_history) < 10:  # Need minimum data points
-    #         return
+        if len(self.press_history) < 10:  # Need minimum data points
+            return
 
-    #     # Calculate average position for frequently used keys
-    #     key_positions = defaultdict(list)
-    #     for key, pos, _ in self.press_history:
-    #         key_positions[key].append(pos)
+        # Analyze key transitions
+        key_transitions = defaultdict(list)
+        for i in range(len(self.press_history) - 1):
+            current_key = self.press_history[i][0]
+            next_key = self.press_history[i + 1][0]
+            if current_key not in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'ENTER'] and \
+               next_key not in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'ENTER']:
+                key_transitions[current_key].append(next_key)
 
-    #     # Update positions for frequently used keys
-    #     base_layout = self.layout_configs[self.current_layout]
-    #     new_layout = base_layout.copy()
-
-    #     for key, positions in key_positions.items():
-    #         if len(positions) >= 5:  # Minimum presses to consider adjustment
-    #             avg_x = sum(p[0] for p in positions) / len(positions)
-    #             avg_y = sum(p[1] for p in positions) / len(positions)
+        # Calculate optimal positions based on transitions
+        base_layout = self.layout_configs[self.current_layout]
+        new_layout = base_layout.copy()
+        
+        for key, transitions in key_transitions.items():
+            if len(transitions) >= 3:  # Minimum transitions to consider adjustment
+                # Calculate the average position of frequently following keys
+                following_positions = []
+                for next_key in transitions:
+                    if next_key in new_layout:
+                        following_positions.append(new_layout[next_key])
                 
-    #             # Limit movement from original position
-    #             orig_x, orig_y = base_layout[key]
-    #             max_movement = 20
-    #             new_x = min(max(avg_x, orig_x - max_movement), orig_x + max_movement)
-    #             new_y = min(max(avg_y, orig_y - max_movement), orig_y + max_movement)
-                
-    #             new_layout[key] = (int(new_x), int(new_y))
+                if following_positions:
+                    # Calculate target position (weighted average between original and optimal)
+                    orig_x, orig_y = base_layout[key]
+                    target_x = sum(p[0] for p in following_positions) / len(following_positions)
+                    target_y = sum(p[1] for p in following_positions) / len(following_positions)
+                    
+                    # Apply weighted movement (30% toward optimal position)
+                    weight = 0.3
+                    max_movement = self.settings["key_size"]  # Limit movement to key size
+                    
+                    new_x = orig_x + min(max(target_x - orig_x, -max_movement), max_movement) * weight
+                    new_y = orig_y + min(max(target_y - orig_y, -max_movement), max_movement) * weight
+                    
+                    # Ensure keys don't overlap
+                    min_spacing = self.settings["key_size"] * 1.2
+                    for other_key, other_pos in new_layout.items():
+                        if other_key != key:
+                            dx = new_x - other_pos[0]
+                            dy = new_y - other_pos[1]
+                            distance = (dx**2 + dy**2)**0.5
+                            if distance < min_spacing:
+                                # Push keys apart if too close
+                                scale = min_spacing / (distance + 1e-6)
+                                new_x = other_pos[0] + dx * scale
+                                new_y = other_pos[1] + dy * scale
+                    
+                    new_layout[key] = (int(new_x), int(new_y))
 
-    #     self.current_keys = new_layout
-    #     self.last_layout_update = current_time
+        self.current_keys = new_layout
+        self.last_layout_update = current_time
 
     def handle_special_keys(self, key: str) -> bool:
         # TODO: Convert this into a match-case
@@ -375,6 +404,9 @@ class AdaptiveVirtualKeyboard:
                             self.press_history.append((pressed_key, current_time, (fx, fy)))
                             self.last_press_time = current_time
         
+        # Update layout based on usage patterns
+        self.update_layout()
+        
         # Draw the keyboard
         self.draw_keyboard(frame)
         
@@ -382,8 +414,7 @@ class AdaptiveVirtualKeyboard:
 
 def main():
     cap = cv2.VideoCapture(0)
-    _, frame = cap.read()
-    keyboard = AdaptiveVirtualKeyboard(frame.shape)
+    keyboard = AdaptiveVirtualKeyboard()
     
     while cap.isOpened():
         success, frame = cap.read()
