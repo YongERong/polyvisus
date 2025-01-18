@@ -1,74 +1,149 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, Dimensions } from 'react-native';
+import { Camera, useCameraDevices, useFrameProcessor } from 'react-native-vision-camera';
+import { runOnJS } from 'react-native-reanimated';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+const { width, height } = Dimensions.get('window');
 
-export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+// Define interfaces for our state
+interface Position {
+    x: number;
+    y: number;
 }
 
+interface KeyboardState {
+    text: string;
+    layout: string;
+    shift_active: boolean;
+    pressed_keys: string[];
+    current_keys: { [key: string]: Position };
+}
+
+const App = () => {
+    const [hasPermission, setHasPermission] = useState(false);
+    const [keyboardState, setKeyboardState] = useState<KeyboardState>({
+        text: "",
+        layout: "letters",
+        shift_active: false,
+        pressed_keys: [],
+        current_keys: {}
+    });
+    const devices = useCameraDevices();
+    const device = devices.find((d) => d.position === 'front');
+
+    useEffect(() => {
+        checkPermission();
+    }, []);
+
+    const checkPermission = async () => {
+        const cameraPermission = await Camera.requestCameraPermission();
+        setHasPermission(cameraPermission === 'granted');
+    };
+
+    const updateKeyboardState = async () => {
+        try {
+            const response = await fetch('http://localhost:5000/keyboard-state');
+            const data = await response.json();
+            setKeyboardState(data);
+        } catch (error) {
+            console.error('Error fetching keyboard state:', error);
+        }
+    };
+
+    const frameProcessor = useFrameProcessor((frame) => {
+        'worklet';
+        runOnJS(updateKeyboardState)();
+    }, []);
+
+    const renderKey = (key: string, position: Position) => {
+        const isPressed = keyboardState.pressed_keys.includes(key);
+        const isSpecial = ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'ENTER'].includes(key);
+
+        return (
+            <View
+                key={key}
+                style={[
+                    styles.key,
+                    {
+                        left: (position.x / 600) * width,
+                        top: (position.y / 400) * height,
+                        backgroundColor: isPressed ? 'rgba(0, 255, 0, 0.3)' :
+                            isSpecial ? 'rgba(0, 165, 255, 0.3)' :
+                                'rgba(255, 255, 255, 0.3)',
+                    }
+                ]}
+            >
+                <Text style={styles.keyText}>
+                    {keyboardState.shift_active && key.length === 1 ? key.toUpperCase() : key}
+                </Text>
+            </View>
+        );
+    };
+
+    if (!hasPermission) {
+        return <Text>No access to camera</Text>;
+    }
+
+    if (!device) {
+        return <Text>Loading...</Text>;
+    }
+
+    return (
+        <View style={styles.container}>
+            <Camera
+                style={StyleSheet.absoluteFill}
+                device={device}
+                isActive={true}
+                frameProcessor={frameProcessor}
+                fps={30}
+            >
+                <View style={styles.overlay}>
+                    {Object.entries(keyboardState.current_keys).map(([key, pos]) =>
+                        renderKey(key, pos)
+                    )}
+                </View>
+                <View style={styles.textContainer}>
+                    <Text style={styles.typedText}>{keyboardState.text}</Text>
+                </View>
+            </Camera>
+        </View>
+    );
+};
+
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+    container: {
+        flex: 1,
+    },
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    key: {
+        position: 'absolute',
+        width: 40,
+        height: 40,
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        borderRadius: 5,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    keyText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    textContainer: {
+        position: 'absolute',
+        bottom: 50,
+        left: 20,
+        right: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        padding: 10,
+        borderRadius: 5,
+    },
+    typedText: {
+        color: 'white',
+        fontSize: 18,
+    },
 });
+
+export default App;

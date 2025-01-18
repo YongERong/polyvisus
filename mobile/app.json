@@ -15,7 +15,12 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.anonymous.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -24,6 +29,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Virtual Keyboard to access your camera",
+          "microphonePermission": "Allow Virtual Keyboard to access your microphone",
+          "recordAudioAndroid": true
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -36,6 +49,14 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "eafab63c-c810-48f2-8325-d6c22774cfaf"
+      }
     }
   }
 }
