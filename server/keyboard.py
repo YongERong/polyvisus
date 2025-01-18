@@ -61,6 +61,10 @@ class AdaptiveVirtualKeyboard:
         self.current_wpm = 0
         self.current_spc = 0
         
+        # Add timer initialization
+        self.start_time = time.time()
+        self.elapsed_time = 0
+        
         
     def detect_finger_press(self, hand_landmarks, hand_id) -> list:
         """
@@ -302,6 +306,62 @@ class AdaptiveVirtualKeyboard:
 
 
     def draw_keyboard(self, frame):
+        # Draw text display area at the top
+        display_height = 100
+        display_width = int(frame.shape[1] * 0.8)  # 80% of frame width
+        display_x = (frame.shape[1] - display_width) // 2  # Center horizontally
+        display_y = 30
+            
+        cv2.rectangle(frame, 
+                    (display_x, display_y),
+                    (display_x + display_width, display_y + display_height),
+                    (255, 255, 255), 2)  # White outline
+        
+        # Calculate text size to center it
+        text_size = cv2.getTextSize(self.current_challenge, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        text_x = display_x + (display_width - text_size[0]) // 2  # Center horizontally
+        text_y = display_y + (display_height + text_size[1]) // 2  # Center vertically
+        
+        cv2.putText(frame, self.current_challenge,
+                    (text_x, text_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1,
+                    (255, 255, 255), 2)
+
+        # Draw metrics and timer in top right corner
+        metrics_text = f"WPM: {self.current_wpm:.1f} | SPC: {self.current_spc:.2f}s"
+        timer_text = f"Time: {int(self.elapsed_time//60):02d}:{int(self.elapsed_time%60):02d}"  # MM:SS format
+        
+        font_scale = 0.7
+        metrics_size = cv2.getTextSize(metrics_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
+        timer_size = cv2.getTextSize(timer_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
+        
+        # Position metrics text
+        metrics_x = frame.shape[1] - metrics_size[0] - 20  # 20 pixels from right edge
+        metrics_y = metrics_size[1] + 20  # 20 pixels from top
+        
+        # Position timer text below metrics
+        timer_x = frame.shape[1] - timer_size[0] - 20
+        timer_y = metrics_y + metrics_size[1] + 20  # Below metrics text
+        
+        # Draw background rectangle for both texts
+        padding = 10
+        cv2.rectangle(frame, 
+                     (min(metrics_x, timer_x) - padding, metrics_y - metrics_size[1] - padding),
+                     (frame.shape[1] - padding, timer_y + padding),
+                     (0, 0, 0), -1)
+        
+        # Draw metrics and timer text
+        cv2.putText(frame, metrics_text,
+                   (metrics_x, metrics_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                   (255, 255, 255), 2)
+        
+        cv2.putText(frame, timer_text,
+                   (timer_x, timer_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                   (255, 255, 255), 2)
+
+        # Draw keyboard and other elements
         for letter, pos in self.current_keys.items():
             # Determine key color
             is_pressed = letter in self.pressed_keys
@@ -340,50 +400,11 @@ class AdaptiveVirtualKeyboard:
                        cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                        color, 2)
         
-        # Draw typed text
+        # Draw typed text at the bottom
         cv2.rectangle(frame, (50, frame.shape[0] - 80), (600, frame.shape[0] - 30), (0, 0, 0), -1)
         cv2.putText(frame, self.typed_text[-40:],  # Show last 40 characters
                    (50, frame.shape[0] - 50),
                    cv2.FONT_HERSHEY_SIMPLEX, 1,
-                   (255, 255, 255), 2)
-        display_height = 100
-        display_width = int(frame.shape[1] * 0.8)  # 80% of frame width
-        display_x = (frame.shape[1] - display_width) // 2  # Center horizontally
-        display_y = 30
-            
-        cv2.rectangle(frame, 
-                    (display_x, display_y),
-                    (display_x + display_width, display_y + display_height),
-                    (255, 255, 255), 2)  # White outline
-        
-        # Calculate text size to center it
-        text_size = cv2.getTextSize(self.current_challenge, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-        text_x = display_x + (display_width - text_size[0]) // 2  # Center horizontally
-        text_y = display_y + (display_height + text_size[1]) // 2  # Center vertically
-        
-        cv2.putText(frame, self.current_challenge,
-                    (text_x, text_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1,
-                    (255, 255, 255), 2)
-
-        # Draw metrics in top right corner
-        metrics_text = f"WPM: {self.current_wpm:.1f} | SPC: {self.current_spc:.2f}s"
-        font_scale = 0.7
-        text_size = cv2.getTextSize(metrics_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
-        text_x = frame.shape[1] - text_size[0] - 20  # 20 pixels from right edge
-        text_y = text_size[1] + 20  # 20 pixels from top
-        
-        # Draw background rectangle
-        padding = 10
-        cv2.rectangle(frame, 
-                     (text_x - padding, text_y - text_size[1] - padding),
-                     (text_x + text_size[0] + padding, text_y + padding),
-                     (0, 0, 0), -1)
-        
-        # Draw metrics text
-        cv2.putText(frame, metrics_text,
-                   (text_x, text_y),
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                    (255, 255, 255), 2)
 
     def detect_finger_press(self, hand_landmarks, hand_id) -> list:
@@ -439,6 +460,9 @@ class AdaptiveVirtualKeyboard:
 
 
     def process_frame(self, frame):
+        # Update elapsed time at the start of each frame
+        self.elapsed_time = time.time() - self.start_time
+        
         h, w, c = frame.shape   
         
     
