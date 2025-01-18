@@ -7,7 +7,7 @@ import numpy as np
 import json
 
 class AdaptiveVirtualKeyboard:
-    def __init__(self):
+    def __init__(self, aspect_ratio):
         # Initialize MediaPipe
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
@@ -19,7 +19,7 @@ class AdaptiveVirtualKeyboard:
         self.mp_drawing = mp.solutions.drawing_utils
         
         # Initialize keyboard state
-        self.config = json.load(open('config.json'))
+        self.config = json.load(open('server/config.json'))
         self.settings = self.config['settings']
         self.current_layout = "letters"
         self.shift_active = False
@@ -45,7 +45,7 @@ class AdaptiveVirtualKeyboard:
         self.heat_map = defaultdict(int)
         self.press_history = []
         self.last_layout_update = time.time()
-        self.init_layouts()
+        self.init_layout(self.config['layouts'])
         
     def detect_finger_press(self, hand_landmarks, hand_id) -> list:
         """
@@ -110,57 +110,89 @@ class AdaptiveVirtualKeyboard:
                 return letter
         return ""
 
-    def init_layout(self):
+    def init_layout(self, layouts):
         def get_relative_pos(x_percent, y_percent, screen_width=1000, screen_height=400):
             """Convert percentage positions to pixel coordinates"""
             return (int(x_percent * screen_width), int(y_percent * screen_height))
 
-        # Base positions for different layouts using percentages (0.0 to 1.0)
+        def auto_layout(layout):
+            formatted_layout = {}
+            n_rows = len(layout)
+            v_margin = self.settings["vertical_margin"]
+            h_margin = self.settings["horizontal_margin"]
+            
+            # Pre-calculate y positions for each row
+            center = 0.5
+            key_spacing = self.settings["key_size"] / 400  # Convert pixels to ratio
+            y_positions = [center + (i - (n_rows-1)/2) * key_spacing for i in range(n_rows)]
+            
+            for i, row in enumerate(layout):
+                n_cols = len(row)
+                y_ratio = y_positions[i]
+                
+                # Pre-calculate x positions for this row
+                x_positions = [h_margin + j * (1 - 2*h_margin)/(n_cols-1) for j in range(n_cols)]
+                
+                # Batch process each row
+                formatted_layout.update({
+                    letter: get_relative_pos(x_positions[j], y_ratio)
+                    for j, letter in enumerate(row)
+                })
+                
+            return formatted_layout
+
+        # Process all layouts at once
         self.layout_configs = {
-            "letters": {
-                # Top row (furthest from user)
-                'Q': get_relative_pos(0.10, 0.75), 'W': get_relative_pos(0.20, 0.75),
-                'E': get_relative_pos(0.30, 0.75), 'R': get_relative_pos(0.40, 0.75),
-                'T': get_relative_pos(0.50, 0.75), 'Y': get_relative_pos(0.60, 0.75),
-                'U': get_relative_pos(0.70, 0.75), 'I': get_relative_pos(0.80, 0.75),
-                'O': get_relative_pos(0.90, 0.75), 'P': get_relative_pos(1.00, 0.75),
-                
-                # Middle row
-                'A': get_relative_pos(0.15, 0.50), 'S': get_relative_pos(0.25, 0.50),
-                'D': get_relative_pos(0.35, 0.50), 'F': get_relative_pos(0.45, 0.50),
-                'G': get_relative_pos(0.55, 0.50), 'H': get_relative_pos(0.65, 0.50),
-                'J': get_relative_pos(0.75, 0.50), 'K': get_relative_pos(0.85, 0.50),
-                'L': get_relative_pos(0.95, 0.50),
-                
-                # Bottom row
-                'Z': get_relative_pos(0.20, 0.25), 'X': get_relative_pos(0.30, 0.25),
-                'C': get_relative_pos(0.40, 0.25), 'V': get_relative_pos(0.50, 0.25),
-                'B': get_relative_pos(0.60, 0.25), 'N': get_relative_pos(0.70, 0.25),
-                'M': get_relative_pos(0.80, 0.25),
-                
-                # Special keys (closest to user)
-                'SHIFT': get_relative_pos(0.10, 0.125),
-                '123': get_relative_pos(0.25, 0.125),
-                'SPACE': get_relative_pos(0.50, 0.125),
-                'BACK': get_relative_pos(0.75, 0.125),
-                'ENTER': get_relative_pos(0.90, 0.125)
-            }
+            name: auto_layout(layout) 
+            for name, layout in layouts.items()
         }
 
-        # Add similar relative positions for numbers and symbols layouts
-        self.layout_configs["numbers"] = {
-            # Using same relative positioning pattern
-            '1': get_relative_pos(0.10, 0.75), '2': get_relative_pos(0.20, 0.75),
-            '3': get_relative_pos(0.30, 0.75), '4': get_relative_pos(0.40, 0.75),
-            '5': get_relative_pos(0.50, 0.75), '6': get_relative_pos(0.60, 0.75),
-            '7': get_relative_pos(0.70, 0.75), '8': get_relative_pos(0.80, 0.75),
-            '9': get_relative_pos(0.90, 0.75), '0': get_relative_pos(1.00, 0.75),
-        }
+        # Base positions for different layouts using percentages (0.0 to 1.0)
+        # self.layout_configs = {
+        #     "letters": {
+        #         # Top row (furthest from user)
+        #         'Q': get_relative_pos(0.10, 0.75), 'W': get_relative_pos(0.20, 0.75),
+        #         'E': get_relative_pos(0.30, 0.75), 'R': get_relative_pos(0.40, 0.75),
+        #         'T': get_relative_pos(0.50, 0.75), 'Y': get_relative_pos(0.60, 0.75),
+        #         'U': get_relative_pos(0.70, 0.75), 'I': get_relative_pos(0.80, 0.75),
+        #         'O': get_relative_pos(0.90, 0.75), 'P': get_relative_pos(1.00, 0.75),
+                
+        #         # Middle row
+        #         'A': get_relative_pos(0.15, 0.50), 'S': get_relative_pos(0.25, 0.50),
+        #         'D': get_relative_pos(0.35, 0.50), 'F': get_relative_pos(0.45, 0.50),
+        #         'G': get_relative_pos(0.55, 0.50), 'H': get_relative_pos(0.65, 0.50),
+        #         'J': get_relative_pos(0.75, 0.50), 'K': get_relative_pos(0.85, 0.50),
+        #         'L': get_relative_pos(0.95, 0.50),
+                
+        #         # Bottom row
+        #         'Z': get_relative_pos(0.20, 0.25), 'X': get_relative_pos(0.30, 0.25),
+        #         'C': get_relative_pos(0.40, 0.25), 'V': get_relative_pos(0.50, 0.25),
+        #         'B': get_relative_pos(0.60, 0.25), 'N': get_relative_pos(0.70, 0.25),
+        #         'M': get_relative_pos(0.80, 0.25),
+                
+        #         # Special keys (closest to user)
+        #         'SHIFT': get_relative_pos(0.10, 0.125),
+        #         '123': get_relative_pos(0.25, 0.125),
+        #         'SPACE': get_relative_pos(0.50, 0.125),
+        #         'BACK': get_relative_pos(0.75, 0.125),
+        #         'ENTER': get_relative_pos(0.90, 0.125)
+        #     }
+        # }
 
-        self.layout_configs["symbols"] = {
-            # Using same relative positioning pattern
-            '!': get_relative_pos(0.10, 0.75), '?': get_relative_pos(0.20, 0.75),
-        }
+        # # Add similar relative positions for numbers and symbols layouts
+        # self.layout_configs["numbers"] = {
+        #     # Using same relative positioning pattern
+        #     '1': get_relative_pos(0.10, 0.75), '2': get_relative_pos(0.20, 0.75),
+        #     '3': get_relative_pos(0.30, 0.75), '4': get_relative_pos(0.40, 0.75),
+        #     '5': get_relative_pos(0.50, 0.75), '6': get_relative_pos(0.60, 0.75),
+        #     '7': get_relative_pos(0.70, 0.75), '8': get_relative_pos(0.80, 0.75),
+        #     '9': get_relative_pos(0.90, 0.75), '0': get_relative_pos(1.00, 0.75),
+        # }
+
+        # self.layout_configs["symbols"] = {
+        #     # Using same relative positioning pattern
+        #     '!': get_relative_pos(0.10, 0.75), '?': get_relative_pos(0.20, 0.75),
+        # }
 
         self.current_keys = self.layout_configs["letters"].copy()
 
@@ -204,6 +236,8 @@ class AdaptiveVirtualKeyboard:
     #     self.last_layout_update = current_time
 
     def handle_special_keys(self, key: str) -> bool:
+        # TODO: Convert this into a match-case
+
         """Handle special key presses"""
         if key == 'SHIFT':
             self.shift_active = not self.shift_active
@@ -378,7 +412,8 @@ class AdaptiveVirtualKeyboard:
 
 def main():
     cap = cv2.VideoCapture(0)
-    keyboard = AdaptiveVirtualKeyboard()
+    _, frame = cap.read()
+    keyboard = AdaptiveVirtualKeyboard(frame.shape)
     
     while cap.isOpened():
         success, frame = cap.read()
