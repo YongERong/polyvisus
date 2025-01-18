@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, Dimensions } from 'react-native';
 import { Camera, useCameraDevices, useFrameProcessor } from 'react-native-vision-camera';
-import { runOnJS } from 'react-native-reanimated';
+import { Worklets } from 'react-native-worklets-core';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,7 +29,11 @@ const App = () => {
         current_keys: {}
     });
     const devices = useCameraDevices();
-    const device = devices.find((d) => d.position === 'front');
+    const device = devices.find((d) => d.position === 'back');
+
+    const format = device?.formats.find(f =>
+        f.maxFps >= 30 && f.videoHeight >= 720
+    );
 
     useEffect(() => {
         checkPermission();
@@ -40,9 +44,9 @@ const App = () => {
         setHasPermission(cameraPermission === 'granted');
     };
 
-    const updateKeyboardState = async () => {
+    const fetchKeyboardState = async () => {
         try {
-            const response = await fetch('http://localhost:5000/keyboard-state');
+            const response = await fetch('http://172.20.10.11:5000/keyboard-state');
             const data = await response.json();
             setKeyboardState(data);
         } catch (error) {
@@ -50,9 +54,14 @@ const App = () => {
         }
     };
 
+    // Create a function that can be called from worklets to run your JS function
+    const runUpdateKeyboardState = Worklets.createRunOnJS(fetchKeyboardState);
+
+    // Then use it in your frame processor
     const frameProcessor = useFrameProcessor((frame) => {
         'worklet';
-        runOnJS(updateKeyboardState)();
+        // Call the runOnJS function from within the worklet
+        runUpdateKeyboardState();
     }, []);
 
     const renderKey = (key: string, position: Position) => {
@@ -84,7 +93,7 @@ const App = () => {
         return <Text>No access to camera</Text>;
     }
 
-    if (!device) {
+    if (!device || !format) {
         return <Text>Loading...</Text>;
     }
 
@@ -95,6 +104,7 @@ const App = () => {
                 device={device}
                 isActive={true}
                 frameProcessor={frameProcessor}
+                format={format}
                 fps={30}
             >
                 <View style={styles.overlay}>
