@@ -16,7 +16,7 @@ def load_corpus(file_path):
         return Counter()
 
 # Load the corpus (use your desired file here)
-WORDS = load_corpus('../spellchecker/shakespeare.txt')
+WORDS = load_corpus('spellchecker/shakespeare.txt')
 N = sum(WORDS.values())
 
 def P(word): 
