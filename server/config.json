@@ -29,6 +29,7 @@
     "history_length": 3,
     "layout_update_interval": 10,
     "horizontal_margin": 0.1,
-    "vertical_margin": 0.1
+    "vertical_margin": 0.1,
+    "difficulty": 0
   }
 }

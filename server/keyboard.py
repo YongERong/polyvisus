@@ -8,6 +8,7 @@ import json
 import sys
 #sys.path.append('../spellchecker')
 from spellchecker import spellchecker
+import random
 
 class AdaptiveVirtualKeyboard:
     def __init__(self):
@@ -52,6 +53,13 @@ class AdaptiveVirtualKeyboard:
         self.press_history = []
         self.last_layout_update = time.time()
         self.init_layout(self.config['layouts'])
+        
+        # Add metrics tracking
+        self.char_timestamps = []
+        self.metrics_update_time = time.time()
+        self.current_wpm = 0
+        self.current_spc = 0
+        
         
     def detect_finger_press(self, hand_landmarks, hand_id) -> list:
         """
@@ -222,6 +230,27 @@ class AdaptiveVirtualKeyboard:
 
         self.current_keys = new_layout
         self.last_layout_update = current_time
+    
+    def deprove_layout(self):
+        """
+        De-improve layout by randomly swapping key positions while maintaining original position bounds
+        """
+        # Get current layout keys and positions
+        base_layout = self.layout_configs[self.current_layout]
+        keys = list(base_layout.keys())
+        positions = list(base_layout.values())
+        
+        # Randomly select two keys to swap positions
+        if len(keys) >= 2:
+            idx1, idx2 = random.sample(range(len(keys)), 2)
+            positions[idx1], positions[idx2] = positions[idx2], positions[idx1]
+            
+            # Create new layout with swapped positions
+            new_layout = {k: p for k, p in zip(keys, positions)}
+            
+            # Update both current keys and base layout config
+            self.current_keys = new_layout.copy()
+            self.layout_configs[self.current_layout] = new_layout.copy()
 
     def handle_special_keys(self, key: str) -> bool:
         """Handle special key presses"""
@@ -251,7 +280,11 @@ class AdaptiveVirtualKeyboard:
                 self.current_layout = "symbols"
                 update_layout()
             case 'SPACE':
-                spell_check()
+                if self.settings["difficulty"] == 0:
+                    spell_check()
+                    return True
+                else:
+                    self.typed_text += " "
             case 'BACK':
                 self.typed_text = self.typed_text[:-1]
                 return True
@@ -282,9 +315,9 @@ class AdaptiveVirtualKeyboard:
 
             # Draw key background
             cv2.rectangle(frame, 
-                         (pos[0] - self.settings["key_size"]//2, pos[1] - self.settings["key_size"]//2),
-                         (pos[0] + self.settings["key_size"]//2, pos[1] + self.settings["key_size"]//2),
-                         color, 2)
+                        (pos[0] - self.settings["key_size"]//2, pos[1] - self.settings["key_size"]//2),
+                        (pos[0] + self.settings["key_size"]//2, pos[1] + self.settings["key_size"]//2),
+                        color, 2)
             
             # Draw key label
             display_text = letter
@@ -298,6 +331,16 @@ class AdaptiveVirtualKeyboard:
             text_size = cv2.getTextSize(display_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
             text_x = pos[0] - text_size[0]//2
             text_y = pos[1] + text_size[1]//2
+
+            display_height = 100
+            display_width = int(frame.shape[1] * 0.8)  # 80% of frame width
+            display_x = (frame.shape[1] - display_width) // 2  # Center horizontally
+            display_y = 30
+            
+            cv2.rectangle(frame, 
+                     (display_x, display_y),
+                     (display_x + display_width, display_y + display_height),
+                     (255, 255, 255), 2)  # White outline
             
             cv2.putText(frame, display_text,
                        (text_x, text_y),
@@ -309,6 +352,26 @@ class AdaptiveVirtualKeyboard:
         cv2.putText(frame, self.typed_text[-40:],  # Show last 40 characters
                    (50, frame.shape[0] - 50),
                    cv2.FONT_HERSHEY_SIMPLEX, 1,
+                   (255, 255, 255), 2)
+
+        # Draw metrics in top right corner
+        metrics_text = f"WPM: {self.current_wpm:.1f} | SPC: {self.current_spc:.2f}s"
+        font_scale = 0.7
+        text_size = cv2.getTextSize(metrics_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
+        text_x = frame.shape[1] - text_size[0] - 20  # 20 pixels from right edge
+        text_y = text_size[1] + 20  # 20 pixels from top
+        
+        # Draw background rectangle
+        padding = 10
+        cv2.rectangle(frame, 
+                     (text_x - padding, text_y - text_size[1] - padding),
+                     (text_x + text_size[0] + padding, text_y + padding),
+                     (0, 0, 0), -1)
+        
+        # Draw metrics text
+        cv2.putText(frame, metrics_text,
+                   (text_x, text_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                    (255, 255, 255), 2)
 
     def detect_finger_press(self, hand_landmarks, hand_id) -> list:
@@ -355,16 +418,17 @@ class AdaptiveVirtualKeyboard:
                 active_fingers.append((finger_name, tip.x, tip.y))
         
         return active_fingers
+    # Update key positions based on current frame dimensions
+    def update_positions(self, frame):
+        h, w, c = frame.shape
+        self.current_keys = {k: (int(pos[0] * w/1000), int(pos[1] * h/400)) 
+                for k, pos in self.layout_configs[self.current_layout].items()}
+    
+
 
     def process_frame(self, frame):
-        h, w, c = frame.shape
-            
-        # Update key positions based on current frame dimensions
-        def update_positions(layout):
-            return {k: (int(pos[0] * w/1000), int(pos[1] * h/400)) 
-                    for k, pos in layout.items()}
+        h, w, c = frame.shape   
         
-        self.current_keys = update_positions(self.layout_configs[self.current_layout])
     
         frame = cv2.flip(frame, 1)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -404,18 +468,55 @@ class AdaptiveVirtualKeyboard:
                                         self.typed_text += pressed_key.upper()
                                     else:
                                         self.typed_text += pressed_key.lower()
+                                    # Add timestamp for metrics
+                                    self.char_timestamps.append(time.time())
                             
                             # Record press for layout adaptation
                             self.press_history.append((pressed_key, current_time, (fx, fy)))
                             self.last_press_time = current_time
+
+                            if self.settings["difficulty"] == 0:
+                                self.improve_layout()
+                            elif self.settings["difficulty"] == 1:
+                                if len(self.typed_text) % random.randint(4, 5) == 0:
+                                    self.deprove_layout()
+
         
-        # Update layout based on usage patterns
-        self.improve_layout()
+        # Update metrics before drawing
+        self.update_metrics()
         
         # Draw the keyboard
         self.draw_keyboard(frame)
         
         return frame
+
+    def update_metrics(self):
+        """Calculate and update WPM and SPC metrics"""
+        current_time = time.time()
+        
+        # Only update every 0.5 seconds to avoid excessive calculations
+        if current_time - self.metrics_update_time < 0.5:
+            return
+            
+        # Remove timestamps older than 60 seconds
+        cutoff_time = current_time - 60
+        self.char_timestamps = [t for t in self.char_timestamps if t > cutoff_time]
+        
+        if len(self.char_timestamps) < 2:
+            self.current_wpm = 0
+            self.current_spc = 0
+            return
+            
+        # Calculate WPM
+        # Standard assumption: 5 characters = 1 word
+        char_count = len(self.char_timestamps)
+        time_span = self.char_timestamps[-1] - self.char_timestamps[0]
+        if time_span > 0:
+            chars_per_minute = (char_count / time_span) * 60
+            self.current_wpm = chars_per_minute / 5  # Convert to words per minute
+            self.current_spc = time_span / char_count
+        
+        self.metrics_update_time = current_time
 
 def main():
     cap = cv2.VideoCapture(0)
@@ -423,6 +524,8 @@ def main():
     
     while cap.isOpened():
         success, frame = cap.read()
+        keyboard.update_positions(frame)
+        
         if not success:
             continue
         
