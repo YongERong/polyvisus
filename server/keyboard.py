@@ -3,6 +3,8 @@ import mediapipe as mp
 from typing import Tuple
 from collections import defaultdict
 import time
+import numpy as np
+import json
 
 class AdaptiveVirtualKeyboard:
     def __init__(self):
@@ -17,23 +19,18 @@ class AdaptiveVirtualKeyboard:
         self.mp_drawing = mp.solutions.drawing_utils
         
         # Initialize keyboard state
+        self.config = json.load(open('config.json'))
+        self.settings = self.config['settings']
         self.current_layout = "letters"
         self.shift_active = False
-        self.key_size = 40
         self.pressed_keys = set()
         self.typed_text = ""
         self.last_press_time = 0
-        self.key_cooldown = 0.5
 
         # Combined finger tracking
         self.prev_tip_positions = {}  # Track previous tip positions
         self.prev_tip_y_velocity = {}  # Track y-velocity of tips
-        self.movement_threshold = 0.01  # Minimum movement to consider
-        self.press_velocity_threshold = 0.04  # Minimum velocity for a press
-        self.x_velocity_max_ratio = 1.5  # Maximum allowed ratio of x-velocity to y-velocity
-        self.min_consecutive_downward = 2
         self.tip_history = defaultdict(list)  # Store recent tip positions
-        self.history_length = 3  # Number of frames to track
         
         # Define fingertip landmarks
         self.fingertips = {
@@ -48,9 +45,8 @@ class AdaptiveVirtualKeyboard:
         self.heat_map = defaultdict(int)
         self.press_history = []
         self.last_layout_update = time.time()
-        self.layout_update_interval = 10
         self.init_layouts()
-
+        
     def detect_finger_press(self, hand_landmarks, hand_id) -> list:
         """
         Detect deliberate downward pressing motions while ignoring quick horizontal movements
@@ -66,11 +62,11 @@ class AdaptiveVirtualKeyboard:
             
             # Store current position in history
             self.tip_history[finger_key].append((tip.x, tip.y))
-            if len(self.tip_history[finger_key]) > self.history_length:
+            if len(self.tip_history[finger_key]) > self.settings["history_length"]:
                 self.tip_history[finger_key].pop(0)
             
             # Need full history for velocity calculations
-            if len(self.tip_history[finger_key]) < self.history_length:
+            if len(self.tip_history[finger_key]) < self.settings["history_length"]:
                 continue
                 
             # Calculate velocities using multiple frames
@@ -98,10 +94,10 @@ class AdaptiveVirtualKeyboard:
             total_movement = ((tip.x - self.tip_history[finger_key][0][0])**2 + 
                             (tip.y - self.tip_history[finger_key][0][1])**2)**0.5
             
-            if (downward_frames >= self.min_consecutive_downward and
-                avg_y_velocity > self.press_velocity_threshold and
-                avg_x_velocity < avg_y_velocity * self.x_velocity_max_ratio and
-                total_movement > self.movement_threshold):
+            if (downward_frames >= self.settings["min_consecutive_downward"] and
+                avg_y_velocity > self.settings["press_velocity_threshold"] and
+                avg_x_velocity < avg_y_velocity * self.settings["x_velocity_max_ratio"] and
+                total_movement > self.settings["movement_threshold"]):
                 active_fingers.append((finger_name, tip.x, tip.y))
         
         return active_fingers
@@ -109,12 +105,12 @@ class AdaptiveVirtualKeyboard:
 
     def check_key_press(self, finger_pos: Tuple[int, int]) -> str:
         for letter, key_pos in self.current_keys.items():
-            if (abs(finger_pos[0] - key_pos[0]) < self.key_size//2 and
-                abs(finger_pos[1] - key_pos[1]) < self.key_size//2):
+            if (abs(finger_pos[0] - key_pos[0]) < self.settings["key_size"]//2 and
+                abs(finger_pos[1] - key_pos[1]) < self.settings["key_size"]//2):
                 return letter
         return ""
 
-    def init_layouts(self):
+    def init_layout(self):
         def get_relative_pos(x_percent, y_percent, screen_width=1000, screen_height=400):
             """Convert percentage positions to pixel coordinates"""
             return (int(x_percent * screen_width), int(y_percent * screen_height))
@@ -168,44 +164,44 @@ class AdaptiveVirtualKeyboard:
 
         self.current_keys = self.layout_configs["letters"].copy()
 
-    def update_layout(self):
-        """Update key positions based on usage patterns"""
-        current_time = time.time()
-        if current_time - self.last_layout_update < self.layout_update_interval:
-            return
+    # def update_layout(self):
+    #     """Update key positions based on usage patterns"""
+    #     current_time = time.time()
+    #     if current_time - self.last_layout_update < self.settings["layout_update_interval"]:
+    #         return
 
-        # Remove old press history
-        current_time = time.time()
-        self.press_history = [press for press in self.press_history 
-                            if current_time - press[1] < 60]  # Keep last minute
+    #     # Remove old press history
+    #     current_time = time.time()
+    #     self.press_history = [press for press in self.press_history 
+    #                         if current_time - press[1] < 60]  # Keep last minute
 
-        if len(self.press_history) < 10:  # Need minimum data points
-            return
+    #     if len(self.press_history) < 10:  # Need minimum data points
+    #         return
 
-        # Calculate average position for frequently used keys
-        key_positions = defaultdict(list)
-        for key, pos, _ in self.press_history:
-            key_positions[key].append(pos)
+    #     # Calculate average position for frequently used keys
+    #     key_positions = defaultdict(list)
+    #     for key, pos, _ in self.press_history:
+    #         key_positions[key].append(pos)
 
-        # Update positions for frequently used keys
-        base_layout = self.layout_configs[self.current_layout]
-        new_layout = base_layout.copy()
+    #     # Update positions for frequently used keys
+    #     base_layout = self.layout_configs[self.current_layout]
+    #     new_layout = base_layout.copy()
 
-        for key, positions in key_positions.items():
-            if len(positions) >= 5:  # Minimum presses to consider adjustment
-                avg_x = sum(p[0] for p in positions) / len(positions)
-                avg_y = sum(p[1] for p in positions) / len(positions)
+    #     for key, positions in key_positions.items():
+    #         if len(positions) >= 5:  # Minimum presses to consider adjustment
+    #             avg_x = sum(p[0] for p in positions) / len(positions)
+    #             avg_y = sum(p[1] for p in positions) / len(positions)
                 
-                # Limit movement from original position
-                orig_x, orig_y = base_layout[key]
-                max_movement = 20
-                new_x = min(max(avg_x, orig_x - max_movement), orig_x + max_movement)
-                new_y = min(max(avg_y, orig_y - max_movement), orig_y + max_movement)
+    #             # Limit movement from original position
+    #             orig_x, orig_y = base_layout[key]
+    #             max_movement = 20
+    #             new_x = min(max(avg_x, orig_x - max_movement), orig_x + max_movement)
+    #             new_y = min(max(avg_y, orig_y - max_movement), orig_y + max_movement)
                 
-                new_layout[key] = (int(new_x), int(new_y))
+    #             new_layout[key] = (int(new_x), int(new_y))
 
-        self.current_keys = new_layout
-        self.last_layout_update = current_time
+    #     self.current_keys = new_layout
+    #     self.last_layout_update = current_time
 
     def handle_special_keys(self, key: str) -> bool:
         """Handle special key presses"""
@@ -248,8 +244,8 @@ class AdaptiveVirtualKeyboard:
 
             # Draw key background
             cv2.rectangle(frame, 
-                         (pos[0] - self.key_size//2, pos[1] - self.key_size//2),
-                         (pos[0] + self.key_size//2, pos[1] + self.key_size//2),
+                         (pos[0] - self.settings["key_size"]//2, pos[1] - self.settings["key_size"]//2),
+                         (pos[0] + self.settings["key_size"]//2, pos[1] + self.settings["key_size"]//2),
                          color, 2)
             
             # Draw key label
@@ -292,7 +288,7 @@ class AdaptiveVirtualKeyboard:
             
             # Store current position in history
             self.tip_history[finger_key].append((tip.x, tip.y))
-            if len(self.tip_history[finger_key]) > self.history_length:
+            if len(self.tip_history[finger_key]) > self.settings["history_length"]:
                 self.tip_history[finger_key].pop(0)
             
             # Need at least 2 points to calculate velocity
@@ -315,9 +311,9 @@ class AdaptiveVirtualKeyboard:
             # 1. Movement exceeds minimum threshold
             # 2. Y-velocity indicates downward movement (positive in screen coordinates)
             # 3. Y-velocity exceeds press threshold
-            if (movement > self.movement_threshold and 
+            if (movement > self.settings["movement_threshold"] and 
                 y_velocity > 0 and 
-                y_velocity > self.press_velocity_threshold):
+                y_velocity > self.settings["press_velocity_threshold"]):
                 active_fingers.append((finger_name, tip.x, tip.y))
         
         return active_fingers
@@ -362,7 +358,7 @@ class AdaptiveVirtualKeyboard:
                     pressed_key = self.check_key_press((fx, fy))
                     if pressed_key:
                         self.pressed_keys.add(pressed_key)
-                        if current_time - self.last_press_time > self.key_cooldown:
+                        if current_time - self.last_press_time > self.settings["key_cooldown"]:
                             if not self.handle_special_keys(pressed_key):
                                 # Add regular key to typed text
                                 if len(pressed_key) == 1:  # Regular character
