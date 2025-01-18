@@ -6,8 +6,8 @@ import time
 import numpy as np
 import json
 import sys
-sys.path.append('../spellchecker')
-import spellchecker
+#sys.path.append('../spellchecker')
+from spellchecker import spellchecker
 
 class AdaptiveVirtualKeyboard:
     def __init__(self):
@@ -155,7 +155,7 @@ class AdaptiveVirtualKeyboard:
 
         self.current_keys = self.layout_configs["letters"].copy()
 
-    def update_layout(self):
+    def improve_layout(self):
         """
         Update key positions based on usage patterns to minimize finger movement.
         Keys that are frequently used together will be positioned closer to each other.
@@ -176,8 +176,8 @@ class AdaptiveVirtualKeyboard:
         for i in range(len(self.press_history) - 1):
             current_key = self.press_history[i][0]
             next_key = self.press_history[i + 1][0]
-            if current_key not in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'ENTER'] and \
-               next_key not in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'ENTER']:
+            if current_key not in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'CLR'] and \
+               next_key not in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'CLR']:
                 key_transitions[current_key].append(next_key)
 
         # Calculate optimal positions based on transitions
@@ -224,36 +224,42 @@ class AdaptiveVirtualKeyboard:
         self.last_layout_update = current_time
 
     def handle_special_keys(self, key: str) -> bool:
-        # TODO: Convert this into a match-case
-
         """Handle special key presses"""
-        if key == 'SHIFT':
-            self.shift_active = not self.shift_active
-            return True
-        elif key in ['123', 'ABC', 'SYM']:
-            if key == '123':
-                self.current_layout = "numbers"
-            elif key == 'ABC':
-                self.current_layout = "letters"
-            elif key == 'SYM':
-                self.current_layout = "symbols"
+        def update_layout():
             self.current_keys = self.layout_configs[self.current_layout].copy()
             return True
-        elif key == 'SPACE':
+        
+        def spell_check():
             current_word = self.get_current_word()
-            # Check if the word is correct
-            corrected_word = self.spell.correction(current_word)  # Autocorrect the current word
+            corrected_word = self.spell.correction(current_word) 
             if corrected_word != current_word:
                 self.typed_text = self.typed_text[:-len(current_word)] + corrected_word  # Replace with corrected word
-            self.typed_text += " "  # Add space after the corrected word
+            self.typed_text += " "
             return True
-        elif key == 'BACK':
-            self.typed_text = self.typed_text[:-1]
-            return True
-        elif key == 'ENTER':
-            self.typed_text += "\n"
-            return True
-        return False
+        
+        match key:
+            case 'SHIFT':
+                self.shift_active = not self.shift_active
+                return True
+            case '123':
+                self.current_layout = "numbers"
+                update_layout()
+            case 'ABC':
+                self.current_layout = "letters"
+                update_layout()
+            case 'SYM':
+                self.current_layout = "symbols"
+                update_layout()
+            case 'SPACE':
+                spell_check()
+            case 'BACK':
+                self.typed_text = self.typed_text[:-1]
+                return True
+            case 'CLR':
+                self.typed_text = ""
+                return True
+            case _:
+                return False
     
     def get_current_word(self) -> str:
         """Get the current word being typed, assuming space or punctuation breaks it"""
@@ -262,11 +268,10 @@ class AdaptiveVirtualKeyboard:
 
 
     def draw_keyboard(self, frame):
-        # Draw each key
         for letter, pos in self.current_keys.items():
             # Determine key color
             is_pressed = letter in self.pressed_keys
-            is_special = letter in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'ENTER']
+            is_special = letter in ['SHIFT', '123', 'ABC', 'SYM', 'SPACE', 'BACK', 'CLR']
             
             if is_pressed:
                 color = (0, 255, 0)
@@ -405,7 +410,7 @@ class AdaptiveVirtualKeyboard:
                             self.last_press_time = current_time
         
         # Update layout based on usage patterns
-        self.update_layout()
+        self.improve_layout()
         
         # Draw the keyboard
         self.draw_keyboard(frame)
