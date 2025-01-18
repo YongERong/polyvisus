@@ -155,13 +155,15 @@ class AdaptiveVirtualKeyboard:
         self.layout_configs["numbers"] = {
             # Using same relative positioning pattern
             '1': get_relative_pos(0.10, 0.75), '2': get_relative_pos(0.20, 0.75),
-            # ... rest of the number layout
+            '3': get_relative_pos(0.30, 0.75), '4': get_relative_pos(0.40, 0.75),
+            '5': get_relative_pos(0.50, 0.75), '6': get_relative_pos(0.60, 0.75),
+            '7': get_relative_pos(0.70, 0.75), '8': get_relative_pos(0.80, 0.75),
+            '9': get_relative_pos(0.90, 0.75), '0': get_relative_pos(1.00, 0.75),
         }
 
         self.layout_configs["symbols"] = {
             # Using same relative positioning pattern
             '!': get_relative_pos(0.10, 0.75), '?': get_relative_pos(0.20, 0.75),
-            # ... rest of the symbol layout
         }
 
         self.current_keys = self.layout_configs["letters"].copy()
