@@ -5,9 +5,15 @@ from collections import defaultdict
 import time
 import numpy as np
 import json
+import sys
+sys.path.append('../spellchecker')
+import spellchecker
 
 class AdaptiveVirtualKeyboard:
     def __init__(self, aspect_ratio):
+        # Initialize spellchecker
+        self.spell = spellchecker
+
         # Initialize MediaPipe
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
@@ -19,7 +25,7 @@ class AdaptiveVirtualKeyboard:
         self.mp_drawing = mp.solutions.drawing_utils
         
         # Initialize keyboard state
-        self.config = json.load(open('server/config.json'))
+        self.config = json.load(open('../server/config.json'))
         self.settings = self.config['settings']
         self.current_layout = "letters"
         self.shift_active = False
@@ -147,53 +153,6 @@ class AdaptiveVirtualKeyboard:
             for name, layout in layouts.items()
         }
 
-        # Base positions for different layouts using percentages (0.0 to 1.0)
-        # self.layout_configs = {
-        #     "letters": {
-        #         # Top row (furthest from user)
-        #         'Q': get_relative_pos(0.10, 0.75), 'W': get_relative_pos(0.20, 0.75),
-        #         'E': get_relative_pos(0.30, 0.75), 'R': get_relative_pos(0.40, 0.75),
-        #         'T': get_relative_pos(0.50, 0.75), 'Y': get_relative_pos(0.60, 0.75),
-        #         'U': get_relative_pos(0.70, 0.75), 'I': get_relative_pos(0.80, 0.75),
-        #         'O': get_relative_pos(0.90, 0.75), 'P': get_relative_pos(1.00, 0.75),
-                
-        #         # Middle row
-        #         'A': get_relative_pos(0.15, 0.50), 'S': get_relative_pos(0.25, 0.50),
-        #         'D': get_relative_pos(0.35, 0.50), 'F': get_relative_pos(0.45, 0.50),
-        #         'G': get_relative_pos(0.55, 0.50), 'H': get_relative_pos(0.65, 0.50),
-        #         'J': get_relative_pos(0.75, 0.50), 'K': get_relative_pos(0.85, 0.50),
-        #         'L': get_relative_pos(0.95, 0.50),
-                
-        #         # Bottom row
-        #         'Z': get_relative_pos(0.20, 0.25), 'X': get_relative_pos(0.30, 0.25),
-        #         'C': get_relative_pos(0.40, 0.25), 'V': get_relative_pos(0.50, 0.25),
-        #         'B': get_relative_pos(0.60, 0.25), 'N': get_relative_pos(0.70, 0.25),
-        #         'M': get_relative_pos(0.80, 0.25),
-                
-        #         # Special keys (closest to user)
-        #         'SHIFT': get_relative_pos(0.10, 0.125),
-        #         '123': get_relative_pos(0.25, 0.125),
-        #         'SPACE': get_relative_pos(0.50, 0.125),
-        #         'BACK': get_relative_pos(0.75, 0.125),
-        #         'ENTER': get_relative_pos(0.90, 0.125)
-        #     }
-        # }
-
-        # # Add similar relative positions for numbers and symbols layouts
-        # self.layout_configs["numbers"] = {
-        #     # Using same relative positioning pattern
-        #     '1': get_relative_pos(0.10, 0.75), '2': get_relative_pos(0.20, 0.75),
-        #     '3': get_relative_pos(0.30, 0.75), '4': get_relative_pos(0.40, 0.75),
-        #     '5': get_relative_pos(0.50, 0.75), '6': get_relative_pos(0.60, 0.75),
-        #     '7': get_relative_pos(0.70, 0.75), '8': get_relative_pos(0.80, 0.75),
-        #     '9': get_relative_pos(0.90, 0.75), '0': get_relative_pos(1.00, 0.75),
-        # }
-
-        # self.layout_configs["symbols"] = {
-        #     # Using same relative positioning pattern
-        #     '!': get_relative_pos(0.10, 0.75), '?': get_relative_pos(0.20, 0.75),
-        # }
-
         self.current_keys = self.layout_configs["letters"].copy()
 
     # def update_layout(self):
@@ -252,7 +211,12 @@ class AdaptiveVirtualKeyboard:
             self.current_keys = self.layout_configs[self.current_layout].copy()
             return True
         elif key == 'SPACE':
-            self.typed_text += " "
+            current_word = self.get_current_word()
+            # Check if the word is correct
+            corrected_word = self.spell.correction(current_word)  # Autocorrect the current word
+            if corrected_word != current_word:
+                self.typed_text = self.typed_text[:-len(current_word)] + corrected_word  # Replace with corrected word
+            self.typed_text += " "  # Add space after the corrected word
             return True
         elif key == 'BACK':
             self.typed_text = self.typed_text[:-1]
@@ -261,6 +225,12 @@ class AdaptiveVirtualKeyboard:
             self.typed_text += "\n"
             return True
         return False
+    
+    def get_current_word(self) -> str:
+        """Get the current word being typed, assuming space or punctuation breaks it"""
+        words = self.typed_text.split()
+        return words[-1] if words else ""
+
 
     def draw_keyboard(self, frame):
         # Draw each key
