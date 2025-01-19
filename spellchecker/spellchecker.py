@@ -1,7 +1,7 @@
 import re
 from collections import Counter
 import sys
-import time
+sys.path.append('../spellchecker')
 
 # Define the autocorrect functions
 def words(text): 
@@ -16,12 +16,12 @@ def load_corpus(file_path):
         return Counter()
 
 # Load the corpus (use your desired file here)
-WORDS = load_corpus('shakespeare.txt')
+WORDS = load_corpus('spellchecker/shakespeare.txt')
 N = sum(WORDS.values())
 
 def P(word): 
     "Probability of `word`."
-    return WORDS[word] / N
+    return WORDS[word] /(N + 0.001)
 
 def correction(word): 
     "Most probable spelling correction for word."
