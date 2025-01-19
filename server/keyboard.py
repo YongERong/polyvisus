@@ -519,7 +519,7 @@ class AdaptiveVirtualKeyboard:
         challenge_complete = False
         
         # Check if time limit reached or challenge completed
-        if self.elapsed_time >= 10 or self.typed_text == self.current_challenge:  
+        if self.elapsed_time >= 500 or self.typed_text == self.current_challenge:  
             challenge_complete = True
             
         if challenge_complete:
