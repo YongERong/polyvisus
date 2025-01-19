@@ -21,7 +21,7 @@ We achieved our primary goal of making typing as painful and counterproductive a
 Building a project no one needs or wants is oddly fulfilling, especially when it works exactly as horribly as intended.
 
 ## Getting Started
-If after reading this, you still decide to continue down this path of pain:
+After reading this, if you still decide to continue down this path of pain:
 ```
 git clone https://github.com/YongERong/polyvisus.git
 python3 -m venv venv
