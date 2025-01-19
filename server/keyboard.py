@@ -34,8 +34,7 @@ class AdaptiveVirtualKeyboard:
         self.typed_text = ""
         self.last_press_time = 0
         self.challenges = json.load(open('server/challenges.json'))
-        self.current_challenge = random.choice(self.challenges[self.settings["difficulty"]])
-        # Combined finger tracking
+        self.current_challenge = random.choice(self.challenges[self.settings["difficulty"]]).lower()
         self.prev_tip_positions = {}  # Track previous tip positions
         self.prev_tip_y_velocity = {}  # Track y-velocity of tips
         self.tip_history = defaultdict(list)  # Store recent tip positions
@@ -140,7 +139,6 @@ class AdaptiveVirtualKeyboard:
             v_margin = self.settings["vertical_margin"]
             h_margin = self.settings["horizontal_margin"]
             
-            # Pre-calculate y positions for each row
             center = 0.5
             key_spacing = self.settings["key_size"] / 400  # Convert pixels to ratio
             y_positions = [center + (i - (n_rows-1)/2) * key_spacing for i in range(n_rows)]
@@ -149,10 +147,8 @@ class AdaptiveVirtualKeyboard:
                 n_cols = len(row)
                 y_ratio = y_positions[i]
                 
-                # Pre-calculate x positions for this row
                 x_positions = [h_margin + j * (1 - 2*h_margin)/(n_cols-1) for j in range(n_cols)]
                 
-                # Batch process each row
                 formatted_layout.update({
                     letter: get_relative_pos(x_positions[j], y_ratio)
                     for j, letter in enumerate(row)
@@ -238,7 +234,7 @@ class AdaptiveVirtualKeyboard:
     
     def deprove_layout(self):
         """
-        De-improve layout by randomly swapping key positions while maintaining original position bounds
+        De-improve layout by randomly swapping key positions while maintaining original position bounds, used for hardest difficulty
         """
         # Get current layout keys and positions
         base_layout = self.layout_configs[self.current_layout]
@@ -267,7 +263,7 @@ class AdaptiveVirtualKeyboard:
             current_word = self.get_current_word()
             corrected_word = self.spell.correction(current_word) 
             if corrected_word != current_word:
-                self.typed_text = self.typed_text[:-len(current_word)] + corrected_word  # Replace with corrected word
+                self.typed_text = self.typed_text[:-len(current_word)] + corrected_word 
             self.typed_text += " "
             return True
         
@@ -300,7 +296,6 @@ class AdaptiveVirtualKeyboard:
                 return False
     
     def get_current_word(self) -> str:
-        """Get the current word being typed, assuming space or punctuation breaks it"""
         words = self.typed_text.split()
         return words[-1] if words else ""
 
@@ -336,12 +331,12 @@ class AdaptiveVirtualKeyboard:
         timer_size = cv2.getTextSize(timer_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
         
         # Position metrics text
-        metrics_x = frame.shape[1] - metrics_size[0] - 20  # 20 pixels from right edge
-        metrics_y = metrics_size[1] + 20  # 20 pixels from top
+        metrics_x = frame.shape[1] - metrics_size[0] - 20 
+        metrics_y = metrics_size[1] + 20 
         
         # Position timer text below metrics
         timer_x = frame.shape[1] - timer_size[0] - 20
-        timer_y = metrics_y + metrics_size[1] + 20  # Below metrics text
+        timer_y = metrics_y + metrics_size[1] + 20 
         
         # Draw background rectangle for both texts
         padding = 10
@@ -478,18 +473,14 @@ class AdaptiveVirtualKeyboard:
                 self.mp_drawing.draw_landmarks(
                     frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
                 
-                # Get all active fingertips
                 active_fingers = self.detect_finger_press(hand_landmarks, hand_idx)
                 
                 h, w, c = frame.shape
                 
-                # Process each active finger
                 for finger_name, fx_norm, fy_norm in active_fingers:
-                    # Convert normalized coordinates to pixel coordinates
                     fx = int(fx_norm * w)
                     fy = int(fy_norm * h)
                     
-                    # Draw fingertip position
                     cv2.circle(frame, (fx, fy), 5, (0, 255, 0), -1)
                     
                     # Check for key presses
@@ -523,7 +514,99 @@ class AdaptiveVirtualKeyboard:
         
         # Draw the keyboard
         self.draw_keyboard(frame)
+
+        # Check if challenge is complete
+        challenge_complete = False
         
+        # Check if time limit reached or challenge completed
+        if self.elapsed_time >= 10 or self.typed_text == self.current_challenge:  
+            challenge_complete = True
+            
+        if challenge_complete:
+            # Create overlay for results
+            overlay = frame.copy()
+            
+            # Draw semi-transparent background
+            cv2.rectangle(overlay, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 0), -1)
+            frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
+            
+            # Draw results title
+            cv2.putText(frame, "Challenge Complete!", 
+                       (frame.shape[1]//4, frame.shape[0]//4),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 2)
+            
+            # Compare texts and find errors
+            min_len = min(len(self.typed_text), len(self.current_challenge))
+            error_positions = []
+            
+            # Find error positions
+            for i in range(min_len):
+                if self.typed_text[i] != self.current_challenge[i]:
+                    error_positions.append(i)
+            
+            # Add remaining characters as errors if lengths differ
+            if len(self.typed_text) > min_len:
+                error_positions.extend(range(min_len, len(self.typed_text)))
+            elif len(self.current_challenge) > min_len:
+                error_positions.extend(range(min_len, len(self.current_challenge)))
+            
+            # Draw the comparison
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1.0
+            line_spacing = 40
+            
+            # Draw "Your text:" label
+            cv2.putText(frame, "Your text:", 
+                       (50, frame.shape[0]//2 - line_spacing),
+                       font, font_scale, (255, 255, 255), 2)
+            
+            # Draw typed text with error highlighting
+            text_x = 50
+            text_y = frame.shape[0]//2
+            
+            for i, char in enumerate(self.typed_text):
+                color = (0, 0, 255) if i in error_positions else (0, 255, 0)
+                # Draw character background
+                text_size = cv2.getTextSize(char, font, font_scale, 2)[0]
+                cv2.rectangle(frame, 
+                            (text_x - 5, text_y - text_size[1] - 5),
+                            (text_x + text_size[0] + 5, text_y + 5),
+                            color, -1)
+                # Draw character
+                cv2.putText(frame, char, (text_x, text_y), font, font_scale, (255, 255, 255), 2)
+                text_x += text_size[0] + 10
+            
+            # Draw "Challenge text:" label
+            cv2.putText(frame, "Challenge text:", 
+                       (50, frame.shape[0]//2 + line_spacing*2),
+                       font, font_scale, (255, 255, 255), 2)
+            
+            # Draw challenge text
+            text_x = 50
+            text_y = frame.shape[0]//2 + line_spacing*3
+            cv2.putText(frame, self.current_challenge,
+                       (text_x, text_y), font, font_scale, (255, 255, 255), 2)
+            
+            # Draw error count
+            cv2.putText(frame, f"Errors: {len(error_positions)}", 
+                       (50, frame.shape[0]//2 + line_spacing*5),
+                       font, 1.2, (0, 0, 255), 2)
+            
+            # Draw WPM
+            cv2.putText(frame, f"Final WPM: {self.current_wpm:.1f}", 
+                       (50, frame.shape[0]//2 + line_spacing*6),
+                       font, 1.2, (255, 255, 255), 2)
+            
+            # Show frame with results for 3 seconds
+            cv2.imshow('Adaptive Virtual Keyboard', frame)
+            cv2.waitKey(3000)
+            
+            # Reset for next challenge
+            self.reset_challenge()
+            
+            # Return a fresh frame
+            return frame
+
         return frame
 
     def update_metrics(self):
@@ -553,6 +636,22 @@ class AdaptiveVirtualKeyboard:
             self.current_spc = time_span / char_count
         
         self.metrics_update_time = current_time
+    
+    def reset_challenge(self):
+        new_challenge = random.choice(self.challenges[self.settings["difficulty"]])
+        while new_challenge == self.current_challenge:
+            new_challenge = random.choice(self.challenges[self.settings["difficulty"]])
+        self.current_challenge = new_challenge
+        self.typed_text = ""
+        self.last_press_time = 0
+        self.char_timestamps = []
+        self.press_history = []
+        self.last_layout_update = time.time()
+        self.start_time = time.time()
+        self.elapsed_time = 0
+        self.current_wpm = 0
+        self.current_spc = 0
+        self.metrics_update_time = time.time()
 
 def main():
     cap = cv2.VideoCapture(0)
